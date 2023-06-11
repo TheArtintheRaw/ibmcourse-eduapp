@@ -11,6 +11,7 @@ import logging
 # Get an instance of a logger
 logger = logging.getLogger(__name__)
 # Create your views here.
+from .models import Course, Enrollment, Question, Choice, Submission
 
 
 def registration_request(request):
@@ -101,6 +102,63 @@ def enroll(request, course_id):
         course.save()
 
     return HttpResponseRedirect(reverse(viewname='onlinecourse:course_details', args=(course.id,)))
+
+def submit(request, course_id):
+    user = request.user
+    course = get_object_or_404(Course, pk=course_id)
+
+    # Get the associated enrollment object
+    enrollment = get_object_or_404(Enrollment, user=user, course=course)
+
+    # Create a submission object referring to the enrollment
+    submission = Submission.objects.create(enrollment=enrollment)
+
+    # Collect the selected choices from exam form
+    submitted_answers = []
+    for key in request.POST:
+        if key.startswith('choice'):
+            value = request.POST[key]
+            choice_id = int(value)
+            choice = get_object_or_404(Choice, pk=choice_id)
+            submitted_answers.append(choice)
+
+    # Add each selected choice object to the submission object
+    submission.selected_choices.set(submitted_answers)
+    submission.save()
+
+    # Redirect to show_exam_result with the submission id
+    return HttpResponseRedirect(reverse('onlinecourse:show_exam_result', args=(course_id, submission.id)))
+
+def extract_answers(request):
+    submitted_anwsers = []
+    for key in request.POST:
+        if key.startswith('choice'):
+            value = request.POST[key]
+            choice_id = int(value)
+            submitted_anwsers.append(choice_id)
+    return submitted_anwsers
+
+def show_exam_result(request, course_id, submission_id):
+    # Get course and submission
+    course = get_object_or_404(Course, pk=course_id)
+    submission = get_object_or_404(Submission, pk=submission_id)
+
+    # Get the selected choice ids
+    selected_choices = submission.selected_choices.all()
+
+    # Initialize the total score
+    total_score = 0
+
+    # Iterate through all the selected choices
+    for choice in selected_choices:
+        # Check if the choice is correct
+        if choice.is_correct:
+            # Add the question's grade to the total score
+            total_score += choice.question.grade
+
+    # Render the result page with the total score
+    return render(request, 'onlinecourse/exam_result.html', {'course': course, 'total_score': total_score})
+
 
 
 # <HINT> Create a submit view to create an exam submission record for a course enrollment,
